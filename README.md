@@ -1,4 +1,4 @@
-# Docker-compose for MXSDATA TEAM'S Apache Superset deployment 
+# Docker-compose for Apache Superset deployment 
 
 ### Overview
 This Docker image is a modification of image from the official Superset DockerHub image (https://hub.docker.com/r/apache/superset) with additional features including an AWS RDS MySQL metastore db and gunicorn prod server for flask

@@ -12,12 +12,12 @@ Parameters:
   MasterUsername:
     Type: String
     Description: The username for our database.
-    Default: datanator
+    Default: changeMeChange
   
   MasterUserPassword:
     Type: String
     Description: The password for the database.
-    Default: datanation2000
+    Default: changeMeChangeMe2000
     "NoEcho": true
 
   RDSDBinitName:

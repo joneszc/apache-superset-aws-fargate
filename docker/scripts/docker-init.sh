@@ -17,7 +17,7 @@ Init Step ${1}/${STEP_CNT} [${2}] -- ${3}
 ######################################################################
 EOF
 }
-ADMIN_PASSWORD="datanation2000"
+ADMIN_PASSWORD="changeMeChangeMe2000"
 # If Cypress run – overwrite the password for admin and export env variables
 #if [ "$CYPRESS_CONFIG" == "true" ]; then
     #ADMIN_PASSWORD="general"
@@ -34,10 +34,10 @@ echo_step "1" "Complete" "Applying DB migrations"
 # Create an admin user
 echo_step "2" "Starting" "Setting up admin user ( admin / $ADMIN_PASSWORD )"
 superset fab create-admin \
-               --username datanator \
-               --firstname datanate \
-               --lastname datanator \
-               --email datanator@datanate.com \
+               --username changeMeChange \
+               --firstname changeMe \
+               --lastname changeMeChange \
+               --email changeMeChange@changeMe.com \
                --password $ADMIN_PASSWORD
 echo_step "2" "Complete" "Setting up admin user"
 # Create default roles and permissions
