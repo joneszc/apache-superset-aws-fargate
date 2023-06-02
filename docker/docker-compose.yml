@@ -1,0 +1,122 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+## use on AWS Ec2 & ECS:
+#x-superset-image: &superset-image 1XXXXXXXXXXX.dkr.ecr.us-east-2.amazonaws.com/harbor.svc.foo.bar.dev/registry:apache-superset-2-0-0
+x-superset-user: &superset-user root
+x-superset-depends-on: &superset-depends-on
+  #- db
+  - redis
+x-superset-volumes: &superset-volumes
+  #- ./scripts:/app/scripts
+  - ./superset:/app/superset
+  - ./superset-frontend:/app/superset-frontend
+  - superset_home:/app/superset_home
+  - ./tests:/app/tests
+
+version: "3.7"
+services:
+  redis:
+    image: 1XXXXXXXXXXX.dkr.ecr.us-east-2.amazonaws.com/harbor-foo-bar:redis5
+    #image: harbor.svc.dev/foo/bar/opensource/redis/redis5:latest
+    container_name: superset_cache
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis:/data
+
+  # containerized alternative to hosting Superset metastore db in AWS RDS
+  #db:
+    #env_file:
+      #- docker-compose.env
+    #image: postgres:latest
+    #container_name: superset_db
+    #restart: unless-stopped
+    #ports:
+      #- "127.0.0.1:5432:5432"
+    #volumes:
+      #- db_home:/var/lib/postgresql/data
+
+  superset:
+    env_file:
+      - docker-compose.env
+    #network_mode: "host"## use on AWS WorkSpaces
+    build:
+      context: .
+      dockerfile: superset.Dockerfile
+      network: host
+      #args:
+        #buildno: 1
+        #Version: ${Version}
+    container_name: superset_app
+    command: ["/app/scripts/docker-bootstrap.sh", "app-gunicorn"]
+    restart: unless-stopped
+    ports:
+      - 8088:8088
+    user: *superset-user
+    depends_on: *superset-depends-on
+    #environment:
+    #volumes: *superset-volumes
+
+  superset-worker:
+    #network_mode: "host"## use on AWS WorkSpaces
+    build:
+      context: .
+      dockerfile: superset.Dockerfile
+      network: host
+      #args:
+        #buildno: 1
+        #Version: ${Version}
+    container_name: superset_worker
+    command: ["/app/scripts/docker-bootstrap.sh", "worker"]
+    env_file:
+      - docker-compose.env
+    restart: unless-stopped
+    depends_on: *superset-depends-on
+    user: *superset-user
+    #environment:
+    #volumes: *superset-volumes
+    # Bump memory limit if processing selenium / thumbails on superset-worker
+    # mem_limit: 2038m
+    # mem_reservation: 128M
+
+  superset-worker-beat:
+    #network_mode: "host"## use on AWS WorkSpaces
+    build:
+      context: .
+      dockerfile: superset.Dockerfile
+      network: host
+      #args:
+        #buildno: 1
+        #Version: ${Version}
+    container_name: superset_worker_beat
+    command: ["/app/scripts/docker-bootstrap.sh", "beat"]
+    env_file:
+      - docker-compose.env
+    restart: unless-stopped
+    depends_on: *superset-depends-on
+    user: *superset-user
+    #environment:
+    #volumes: *superset-volumes
+
+volumes:
+  #superset_home:
+    #external: false
+  #db_home:
+    #external: false
+  redis:
+    external: false

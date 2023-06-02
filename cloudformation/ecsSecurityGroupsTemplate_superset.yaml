@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "This CF template deploys the Ec2 Security Groups for the Application Load Balancer and the ECS Service to run a single Fargate container task with the SUPERSET container image"
+# To deploy the stack, use:
+# aws cloudformation deploy --template-file ecsFargateTemplate_superset.yaml --stack-name superset-fargate-stack
+# To retrieve the load balancer public DNS address, use: 
+# aws cloudformation --region us-east-2 describe-stacks --stack-name superset-fargate-stack --query "Stacks[0].Outputs[?OutputKey=='Host'].OutputValue" --output text
+
+Parameters:
+  VPC:
+    Type: String
+    Description: The VPC to create the cluster.
+    Default: vpc-02XXXXXXXXXXXXXXX
+
+  SupersetLogGroupName:
+    Type: String
+    Description: The CloudWatch Log Group name assigned to the ECS task.
+    Default: apache-superset-log-group
+    #arn:aws:logs:us-east-2:1XXXXXXXXXXX:log-group:apache-superset-log-group:*
+  
+  AppContainerName:
+    Type: String
+    Description: The name of the primary application container node that connects to the Load Balancer.
+    Default: superset
+
+  #FargateAppLoadBalancerSG:
+    #Type: String
+    #Description: The Security Group for the Fargate Application Load Balancer.
+    #Default: sg-01XXXXXXXXXXXXXXX
+  #Alb2FargateSG:
+    #Type: String
+    #Description: The Security Group for traffic between ALB and containers.
+    #Default: sg-02XXXXXXXXXXXXXXX
+
+  PrivateSubnet01:
+    Type: String
+    Description: The subnet for the DB cluster.
+    Default: subnet-7XXXXXXXXXXXXXXXX
+  PrivateSubnet02:
+    Type: String
+    Description: The subnet for the DB cluster.
+    Default: subnet-0XXXXXXXXXXXXXXXX
+  #PrivateSubnet03:
+    #Type: String
+    #Description: The subnet for the DB cluster
+    #Default: subnet-6XXXXXXXXXXXXXXXX
+
+Resources:
+  #supersetContainerLogGroup:
+    #Type: AWS::Logs::LogGroup
+    #Properties:
+      #LogGroupName: !Ref SupersetLogGroupName
+
+  FargateAppLoadBalancerSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: SG for the Fargate Application Load Balancer
+      GroupName: FargateAppLoadBalancerSG
+      SecurityGroupIngress:  
+        -     
+          IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '15.200.80.152/32'
+          Description: 'IPv4 traffic from jpo-dsop vdi'
+        #- IpProtocol: tcp
+          #FromPort: '80'
+          #ToPort: '80'
+          #CidrIp: '15.200.53.252/32'
+          #Description: 'IPv4 traffic from sandbox vdi'
+        #- IpProtocol: tcp
+          #FromPort: 80
+          #ToPort: 80
+          #CidrIp: '128.229.4.2/32'
+          #Description: 'IPv4 traffic from BoozAllenHamiltonVPN'
+        #- IpProtocol: tcp
+          #FromPort: 80
+          #oPort: 80
+          #CidrIp: '156.80.4.2/32'
+          #Description: 'IPv4 traffic from altBoozAllenHamiltonVPN'
+      Tags:
+        - Key: Name
+          Value: FargateAppLoadBalancerSG  
+  Alb2FargateSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: SG for traffic between ALB and containers
+      GroupName: Alb2FargateSG
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          SourceSecurityGroupId: !GetAtt FargateAppLoadBalancerSG.GroupId
+          Description: 'Inbound rule for all traffic from FargateAppLoadBalancerSG'
+
+  supersetFargateTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+        - "FARGATE"
+      TaskRoleArn: !Ref TaskRole # https://stackoverflow.com/questions/62830154/how-to-give-a-fargate-task-the-right-permissions-to-upload-to-s3
+      ExecutionRoleArn: !Ref TaskRole
+      Cpu: 4096
+      Memory: 16384
+      NetworkMode: "awsvpc"
+      ContainerDefinitions:
+        - Name: !Ref AppContainerName
+          Image: !Ref SupersetImage
+          MemoryReservation: 4096
+          Memory: 8192
+          PortMappings:
+            - ContainerPort: 8088
+              Protocol: tcp
+          EnvironmentFiles:
+            - Value: !Ref EnvFile
+            #- Value: "arn:aws:s3:::foo-data-applications-prod/apache-superset/env/docker-compose.env"            
+              Type: s3
+          Command:
+            - "/app/scripts/docker-bootstrap.sh"
+            - "app-gunicorn"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref SupersetLogGroupName
+              awslogs-stream-prefix: ecs
+        - Name: "superset_worker"
+          Image: !Ref SupersetImage
+          MemoryReservation: 4096
+          Memory: 8192
+          EnvironmentFiles:
+            - Value: !Ref EnvFile        
+              Type: s3
+          Command:
+            - "/app/scripts/docker-bootstrap.sh"
+            - "worker"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref SupersetLogGroupName
+              awslogs-stream-prefix: ecs
+        - Name: "superset_worker_beat"
+          Image: !Ref SupersetImage
+          MemoryReservation: 4096
+          Memory: 8192
+          EnvironmentFiles:
+            - Value: !Ref EnvFile        
+              Type: s3
+          Command:
+            - "/app/scripts/docker-bootstrap.sh"
+            - "beat"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref SupersetLogGroupName
+              awslogs-stream-prefix: ecs
+        - Name: "superset_cache"
+          Image: !Ref SupersetCacheImage
+          MemoryReservation: 4096
+          Memory: 8192
+          PortMappings:
+            - ContainerPort: 6379
+              HostPort: 6379
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref SupersetLogGroupName
+              awslogs-stream-prefix: ecs
+      Family: supersetFargateTaskDef              
+      Tags:
+        - Key: Name
+          Value: supersetFargateTaskDef
+
+  supersetECSCluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: supersetFargateCluster
+  supersetFargateAlb:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: superset-fargate-alb
+      Subnets:
+        - !Ref PrivateSubnet01
+        - !Ref PrivateSubnet02
+      Type: application
+      SecurityGroups:
+        - !Ref FargateAppLoadBalancerSG
+        #- sg-01XXXXXXXXXXXXXXX
+  supersetFargateTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: supersetFargateTargetGroup
+      VpcId: !Ref VPC
+      #HealthCheckEnabled: false #set to false to disable
+      HealthCheckIntervalSeconds: 100
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 99
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Protocol: HTTP
+      Port: 8080
+      #HealthCheckPath: /actuator/
+      TargetType: ip
+  Listener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref supersetFargateTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref supersetFargateAlb
+      Port: 80
+      Protocol: HTTP
+
+  supersetECSService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - Listener
+    Properties:
+      LaunchType: FARGATE
+      Cluster:
+        Ref: "supersetECSCluster"
+      DesiredCount: 1
+      TaskDefinition:
+        Ref: "supersetFargateTaskDef"
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref Alb2FargateSG
+          #Subnets: ['subnet-3XXXXXXXXXXXXXXXX','subnet-5XXXXXXXXXXXXXXXX']
+          Subnets:
+            - !Ref PrivateSubnet01
+            - !Ref PrivateSubnet02
+      #HealthCheckGracePeriodSeconds: !Ref HealthCheckGracePeriodSeconds
+      HealthCheckGracePeriodSeconds: 2147
+      LoadBalancers:
+        - TargetGroupArn:
+            Ref: supersetFargateTargetGroup
+          ContainerPort: 8088
+          ContainerName: !Ref AppContainerName
+
+# -----------------------------------------------------------------------------
+# Outputs
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/outputs-section-structure.html
+# -----------------------------------------------------------------------------
+Outputs:
+  Host:
+    Description: "Host name of the Application Load Balancer of Apache Superset"
+    Export:
+      Name: !Sub "${AWS::StackName}-host"
+    Value: !GetAtt supersetFargateAlb.DNSName

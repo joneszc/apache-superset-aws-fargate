@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create a MYSQL Database and, optionally, a security group and a DB subnet group (commented out)"
+## deploy cmd: aws cloudformation deploy --template-file supersetRdsMySqlDbTemplate.yaml --stack-name apache-superset-rds-metastore-stack --capabilities CAPABILITY_IAM --profile prod
+
+Parameters:
+  VPC:
+    Type: String
+    Description: The VPC to create the cluster
+    Default: vpc-0XXXXXXXXXXXXXXXX
+    #Default: vpc-03XXXXXXXXXXXXXXX
+
+  MasterUsername:
+    Type: String
+    Description: The username for our database.
+    Default: datanator
+  
+  MasterUserPassword:
+    Type: String
+    Description: The password for the database.
+    Default: datanation2000
+    "NoEcho": true
+
+  RDSDBinitName:
+    Type: String
+    Description: The name of the database.
+    Default: superset_mysql_metastore
+
+  ParameterGroup:
+    Type: String
+    Description: The name of the database parameter group created.
+    Default: default.mysql8.0
+
+  PrivateSubnet01:
+    Type: String
+    Description: The private subnet for the DB cluster (apps-subnet-1a)
+    Default: subnet-1XXXXXXXXXXXXXXXX
+  PrivateSubnet02:
+    Type: String
+    Description: The private subnet for the DB cluster (apps-subnet-1b)
+    Default: subnet-2XXXXXXXXXXXXXXXX
+  PrivateSubnet03:
+    Type: String
+    Description: The private subnet for the DB cluster (apps-subnet-1c)
+    Default: subnet-4XXXXXXXXXXXXXXXX
+
+  EnableEnhancedMonitoring:
+    Description: 'Provide metrics in real time for the operating system (OS) that your DB instance runs on.'
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+
+Conditions:
+  HasEnhancedMonitoring: !Equals [ !Ref EnableEnhancedMonitoring, 'true' ]
+
+Resources:
+    RDSdbSecurityGroup:
+        Type: "AWS::EC2::SecurityGroup"
+        Properties:
+            GroupDescription: "Database instances security group"
+            GroupName: superset-metastore-db-SG
+            VpcId: !Ref VPC
+            SecurityGroupIngress: 
+              - 
+                CidrIp: "0.0.0.0/0"
+                FromPort: 3306
+                IpProtocol: "tcp"
+                ToPort: 3306
+            SecurityGroupEgress: 
+              - 
+                CidrIp: "0.0.0.0/0"
+                IpProtocol: "-1"
+
+    RDSDBSubnetGroup:
+        Type: "AWS::RDS::DBSubnetGroup"
+        Properties:
+            DBSubnetGroupDescription: "Subnet Group for mySQL database"
+            DBSubnetGroupName: !Sub "${AWS::Region}-superset-mysql-metadatabase-subnet-group"
+            SubnetIds: 
+              - !Ref PrivateSubnet01
+              - !Ref PrivateSubnet02
+              - !Ref PrivateSubnet03
+            Tags: 
+              - Key: Name
+                Value: us-east-2-superset-db-cluster
+              - Key: createdBy
+                Value: MxS-Data-Team
+              - Key: Project
+                Value: apache-superset
+              - Key: Environment
+                Value: foobar-maintenance-data
+    EnhancedMonitoringRole:
+      Condition: HasEnhancedMonitoring
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: sts:AssumeRole
+        ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+        Path: "/"
+
+    RDSDBInstance:
+        Type: AWS::RDS::DBInstance
+        Properties:
+            DBInstanceIdentifier: superset-metadatabase
+            AllocatedStorage: 100
+            DBInstanceClass: db.m5.large
+            Engine: "MYSQL"
+            MasterUsername: !Ref MasterUsername
+            MasterUserPassword: !Ref MasterUserPassword
+            BackupRetentionPeriod: 5
+            MultiAZ: true
+            EngineVersion: 8.0.28
+            AutoMinorVersionUpgrade: true
+            Iops: 1000
+            PubliclyAccessible: false
+            ## Provisioned IOPS SSD (io1):
+            StorageType: io1
+            ## General Purpose SSD (gp2):
+            #StorageType: gp2
+            Port: 3306
+            StorageEncrypted: true
+            CopyTagsToSnapshot: true
+            MonitoringInterval: !If [HasEnhancedMonitoring, 60, 0]
+            EnableIAMDatabaseAuthentication: true
+            #EnablePerformanceInsights: true
+            #PerformanceInsightsRetentionPeriod: 5
+            DeletionProtection: false
+            DBName: !Ref RDSDBinitName
+            #DBSubnetGroupName: !Ref RDSDBSubnetGroup
+            DBSubnetGroupName: us-east-2-superset-mysql-metadatabase-subnet-group
+            VPCSecurityGroups: 
+              - !Ref RDSdbSecurityGroup
+              # apache-superset-mysql-sg:
+              #- sg-03XXXXXXXXXXXXXXX
+            MaxAllocatedStorage: 1000
+            DBParameterGroupName: !Ref ParameterGroup
+            #MonitoringRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role"
+            MonitoringRoleArn: !If [HasEnhancedMonitoring, !GetAtt ['EnhancedMonitoringRole', 'Arn'], !Ref 'AWS::NoValue']
+            Tags: 
+              - Key: Name
+                Value: superset-mysql-metadatabase
+              - Key: createdBy
+                Value: MxS-Data-Team
+              - Key: Project
+                Value: apache-superset
+              - Key: Environment
+                Value: foobar-maintenance-data
+
+Outputs:
+   Cluster:
+    Description: The DB Cluster Name
+    Value: !Ref RDSDBInstance
+    
+   #SubnetGroup:
+    #Description: The db subnet group name 
+    #Value: !Ref RDSDBSubnetGroup
