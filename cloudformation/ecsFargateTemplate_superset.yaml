@@ -85,18 +85,9 @@ Resources:
         #- IpProtocol: tcp
           #FromPort: '80'
           #ToPort: '80'
-          #CidrIp: '15.200.53.252/32'
+          #CidrIp: 'XX.XXX.XX.XXX/32'
           #Description: 'IPv4 traffic from sandbox vdi'
-        #- IpProtocol: tcp
-          #FromPort: 80
-          #ToPort: 80
-          #CidrIp: '128.229.4.2/32'
-          #Description: 'IPv4 traffic from BoozAllenHamiltonVPN'
-        #- IpProtocol: tcp
-          #FromPort: 80
-          #oPort: 80
-          #CidrIp: '156.80.4.2/32'
-          #Description: 'IPv4 traffic from altBoozAllenHamiltonVPN'
+
       Tags:
         - Key: Name
           Value: FargateAppLoadBalancerSG  
